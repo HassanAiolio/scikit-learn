@@ -2042,6 +2042,15 @@ class FeatureUnion(TransformerMixin, _BaseComposition):
         if adapter and all(adapter.is_supported_container(X) for X in Xs):
             return adapter.hstack(Xs)
 
+        # Reshape 1D outputs to 2D (n_samples, 1) so that np.hstack /
+        # sparse.hstack work correctly.  This handles the case where a
+        # sub-transformer returns a 1D array (shape (n_samples,)) rather
+        # than the expected 2D shape (n_samples, n_features).
+        Xs = [
+            np.atleast_2d(X).T if hasattr(X, "ndim") and X.ndim == 1 else X
+            for X in Xs
+        ]
+
         if any(sparse.issparse(f) for f in Xs):
             Xs = sparse.hstack(Xs).tocsr()
         else:

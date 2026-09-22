@@ -2409,5 +2409,104 @@ def test_feature_union_metadata_routing(transformer):
             )
 
 
-# End of routing tests
-# ====================
+def test_feature_union_1d_transform_output():
+    """Check that FeatureUnion handles transformers returning 1D arrays.
+
+    Non-regression test for the case where a sub-transformer returns a
+    1D array (shape (n_samples,)) instead of the expected 2D shape
+    (n_samples, n_features).  This used to raise
+    ``ValueError: all the input arrays must have same number of dimensions``.
+    """
+
+    class Transformer1D(BaseEstimator, TransformerMixin):
+        """A transformer that always returns a 1D array."""
+
+        def fit(self, X, y=None):
+            return self
+
+        def transform(self, X, y=None):
+            # Return shape (n_samples,) instead of (n_samples, 1)
+            return np.asarray(X[:, 0])
+
+    X = np.array([[1, 2], [3, 4], [5, 6]])
+    union = FeatureUnion([("one_d", Transformer1D()), ("passthrough", "passthrough")])
+    result = union.fit_transform(X)
+
+    # First column from 1D transformer (reshaped to column), then 2 input cols
+    assert result.shape == (3, 3)
+    assert_array_equal(result[:, 0], X[:, 0])
+    assert_array_equal(result[:, 1:], X[:, 1:])
+
+
+def test_feature_union_all_1d_transform_outputs():
+    """Check that FeatureUnion works when *all* transformers return 1D arrays."""
+
+    class Transformer1D(BaseEstimator, TransformerMixin):
+        """A transformer that returns a 1D array."""
+
+        def __init__(self, col=0):
+            self.col = col
+
+        def fit(self, X, y=None):
+            return self
+
+        def transform(self, X, y=None):
+            return np.asarray(X[:, self.col])
+
+    X = np.array([[1, 2], [3, 4], [5, 6]])
+    union = FeatureUnion(
+        [("col0", Transformer1D(col=0)), ("col1", Transformer1D(col=1))]
+    )
+    result = union.fit_transform(X)
+
+    assert result.shape == (3, 2)
+    assert_array_equal(result[:, 0], X[:, 0])
+    assert_array_equal(result[:, 1], X[:, 1])
+
+
+def test_feature_union_1d_with_weights():
+    """Check that 1D transformer outputs work correctly with transformer_weights."""
+
+    class Transformer1D(BaseEstimator, TransformerMixin):
+        """A transformer that returns a 1D array."""
+
+        def fit(self, X, y=None):
+            return self
+
+        def transform(self, X, y=None):
+            return np.asarray(X[:, 0])
+
+    X = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    union = FeatureUnion(
+        [("one_d", Transformer1D()), ("passthrough", "passthrough")],
+        transformer_weights={"one_d": 2.0},
+    )
+    result = union.fit_transform(X)
+
+    assert result.shape == (3, 3)
+    assert_array_equal(result[:, 0], X[:, 0] * 2.0)
+    assert_array_equal(result[:, 1:], X[:, 1:])
+
+
+def test_feature_union_1d_fit_transform_path():
+    """Check that the fit_transform path also handles 1D outputs correctly."""
+
+    class Transforming1D(BaseEstimator, TransformerMixin):
+        """A transformer using fit_transform that returns 1D."""
+
+        def fit(self, X, y=None):
+            return self
+
+        def fit_transform(self, X, y=None):
+            return np.asarray(X[:, 0])
+
+        def transform(self, X, y=None):
+            return np.asarray(X[:, 0])
+
+    X = np.array([[1, 2], [3, 4], [5, 6]])
+    union = FeatureUnion([("one_d", Transforming1D()), ("pct", "passthrough")])
+    result = union.fit_transform(X)
+
+    assert result.shape == (3, 3)
+    assert_array_equal(result[:, 0], X[:, 0])
+    assert_array_equal(result[:, 1:], X[:, 1:])
